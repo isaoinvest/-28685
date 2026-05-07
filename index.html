@@ -1,13 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"
-  />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <title>AR Video</title>
 
   <script>
@@ -24,426 +21,419 @@
 
   <style>
     * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+      margin:0;
+      padding:0;
+      box-sizing:border-box;
     }
 
-    html,
+    html, body {
+      width:100%;
+      height:100%;
+      overflow:hidden;
+      background:#000;
+      touch-action:none;
+      position:fixed;
+    }
+
     body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #000;
-      touch-action: none;
-      position: fixed;
-      inset: 0;
-      font-family: monospace;
+      inset:0;
     }
 
     #renderCanvas {
-      position: fixed !important;
-      inset: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      z-index: 0;
-      object-fit: cover;
+      position:fixed !important;
+      top:0 !important;
+      left:0 !important;
+      width:100vw !important;
+      height:100vh !important;
+      z-index:0;
+      object-fit:cover;
     }
 
-    [class*='xr8'],
-    [id*='xr8'],
-    [class*='watermark'],
-    [id*='watermark'],
-    [class*='poweredby'] {
-      display: none !important;
-      visibility: hidden !important;
-      pointer-events: none !important;
+    [class*="xr8"],
+    [id*="xr8"],
+    [class*="watermark"],
+    [id*="watermark"],
+    [class*="poweredby"] {
+      display:none !important;
+      visibility:hidden !important;
+      pointer-events:none !important;
     }
 
     #tap-start {
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      background: #000;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      gap: 20px;
-      transition: opacity 0.7s ease;
-      -webkit-tap-highlight-color: transparent;
+      position:fixed;
+      inset:0;
+      z-index:9999;
+      background:#000;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap:20px;
+      transition:opacity .7s ease;
+      -webkit-tap-highlight-color:transparent;
     }
 
     #tap-start .title {
-      color: #00d8ff;
-      font-size: 13px;
-      letter-spacing: 3px;
-      line-height: 2;
-      text-align: center;
+      color:#00d8ff;
+      font-family:monospace;
+      font-size:13px;
+      letter-spacing:3px;
+      line-height:2;
+      text-align:center;
     }
 
     #ts-loader {
-      display: none;
-      color: #00d8ff;
-      font-size: 11px;
+      display:none;
+      color:#00d8ff;
+      font-family:monospace;
+      font-size:11px;
     }
 
     #ts-loader.on {
-      display: block;
+      display:block;
     }
 
     #scan-ov {
-      position: fixed;
-      inset: 0;
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      gap: 20px;
-      pointer-events: none;
-      transition: opacity 0.4s;
+      position:fixed;
+      inset:0;
+      z-index:10;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap:20px;
+      pointer-events:none;
+      transition:opacity .4s;
     }
 
     #scan-ov.hidden {
-      opacity: 0;
+      opacity:0;
     }
 
     .sbox {
-      width: 220px;
-      height: 220px;
-      border: 2px solid rgba(0, 220, 255, 0.45);
-      border-radius: 12px;
+      width:220px;
+      height:220px;
+      border:2px solid rgba(0,220,255,.45);
+      border-radius:12px;
     }
 
     #scan-label {
-      color: #00d8ff;
-      font-size: 11px;
-      text-align: center;
-      line-height: 1.8;
+      color:#00d8ff;
+      font-family:monospace;
+      font-size:11px;
+      text-align:center;
+      line-height:1.8;
     }
 
     #ctrl-bar {
-      position: fixed;
-      inset: auto 0 0 0;
-      height: 60px;
-      z-index: 100;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: rgba(0, 0, 0, 0.85);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.4s;
+      position:fixed;
+      left:0;
+      right:0;
+      bottom:0;
+      height:60px;
+      z-index:100;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      background:rgba(0,0,0,.85);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .4s;
     }
 
     #ctrl-bar.show {
-      opacity: 1;
-      pointer-events: auto;
+      opacity:1;
+      pointer-events:auto;
     }
 
     .cb {
-      height: 38px;
-      padding: 0 20px;
-      border: none;
-      border-radius: 20px;
-      background: #00172d;
-      border: 1px solid rgba(0, 180, 255, 0.35);
-      color: #00d8ff;
-      font-size: 12px;
+      height:38px;
+      padding:0 20px;
+      border:none;
+      border-radius:20px;
+      background:#00172d;
+      border:1px solid rgba(0,180,255,.35);
+      color:#00d8ff;
+      font-family:monospace;
+      font-size:12px;
     }
   </style>
 </head>
 <body>
-  <canvas id="renderCanvas"></canvas>
 
-  <div id="scan-ov">
-    <div class="sbox"></div>
-    <div id="scan-label">AR READY<br />請對準目標圖像</div>
+<canvas id="renderCanvas"></canvas>
+
+<div id="scan-ov">
+  <div class="sbox"></div>
+  <div id="scan-label">AR READY<br>請對準目標圖像</div>
+</div>
+
+<div id="ctrl-bar">
+  <button class="cb" id="btn-play">⏸ 暫停</button>
+</div>
+
+<div id="tap-start">
+  <div class="title">
+    AR VIDEO<br>
+    TAP TO START
   </div>
+  <div id="ts-loader">啟動中...</div>
+</div>
 
-  <div id="ctrl-bar">
-    <button class="cb" id="btn-play">⏸ 暫停</button>
-  </div>
+<script>
+let _targets = null;
+let _xrReady = false;
+let _booted = false;
 
-  <div id="tap-start">
-    <div class="title">
-      AR VIDEO<br />
-      TAP TO START
-    </div>
-    <div id="ts-loader">啟動中...</div>
-  </div>
+window.addEventListener('xrloaded', () => {
+  _xrReady = true;
+  console.log('xrloaded');
+});
 
-  <script>
-    const STATE = {
-      targets: null,
-      xrReady: false,
-      booted: false,
-      resizeBound: false
-    };
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-    const UI = {
-      tap: document.getElementById('tap-start'),
-      loader: document.getElementById('ts-loader'),
-      scan: document.getElementById('scan-ov'),
-      ctrl: document.getElementById('ctrl-bar'),
-      playBtn: document.getElementById('btn-play'),
-      canvas: document.getElementById('renderCanvas')
-    };
+async function preloadTargets() {
+  const arr = [];
 
-    function wait(ms) {
-      return new Promise(resolve => setTimeout(resolve, ms));
+  for (const path of AR_CONFIG.targetJsonPaths) {
+    try {
+      const res = await fetch(path);
+      const json = await res.json();
+      arr.push(json);
+      console.log('target loaded:', path);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  _targets = arr;
+}
+
+async function reqPermissions() {
+  try {
+    if (
+      typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission === 'function'
+    ) {
+      await DeviceMotionEvent.requestPermission();
     }
 
-    async function waitUntil(fn, timeout = 10000, interval = 200) {
-      let waited = 0;
-
-      while (!fn() && waited < timeout) {
-        await wait(interval);
-        waited += interval;
-      }
-
-      return fn();
+    if (
+      typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function'
+    ) {
+      await DeviceOrientationEvent.requestPermission();
     }
+  } catch(e){}
+}
 
-    function createVideo() {
-      const v = document.createElement('video');
-      v.src = AR_CONFIG.videoSrc;
-      v.loop = true;
-      v.muted = false;
-      v.playsInline = true;
-      v.crossOrigin = 'anonymous';
-      v.preload = 'auto';
-      v.setAttribute('playsinline', '');
-      v.setAttribute('webkit-playsinline', '');
-      return v;
+function createARModule() {
+  let video, texture, group;
+  let playing = false;
+
+  const scan = document.getElementById('scan-ov');
+  const ctrl = document.getElementById('ctrl-bar');
+  const btn = document.getElementById('btn-play');
+
+  function play() {
+    video.play().then(() => {
+      playing = true;
+      btn.textContent = '⏸ 暫停';
+    }).catch(console.warn);
+  }
+
+  function pause() {
+    video.pause();
+    playing = false;
+    btn.textContent = '▶ 播放';
+  }
+
+  function resizeRenderer() {
+    const { renderer, camera } = XR8.Threejs.xrScene();
+
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+
+    renderer.domElement.style.cssText = `
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 0 !important;
+      object-fit: cover !important;
+    `;
+
+    if (camera) {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
     }
+  }
 
-    async function preloadTargets() {
-      const result = [];
+  return {
+    name: 'ar-video-module',
 
-      for (const path of AR_CONFIG.targetJsonPaths) {
-        try {
-          const res = await fetch(path);
-          result.push(await res.json());
-        } catch (e) {
-          console.error(e);
-        }
-      }
+    onStart() {
+      const { scene, renderer } = XR8.Threejs.xrScene();
 
-      STATE.targets = result;
-    }
+      renderer.autoClear = false;
 
-    async function reqPermissions() {
-      try {
-        if (
-          typeof DeviceMotionEvent !== 'undefined' &&
-          typeof DeviceMotionEvent.requestPermission === 'function'
-        ) {
-          await DeviceMotionEvent.requestPermission();
-        }
+      resizeRenderer();
 
-        if (
-          typeof DeviceOrientationEvent !== 'undefined' &&
-          typeof DeviceOrientationEvent.requestPermission === 'function'
-        ) {
-          await DeviceOrientationEvent.requestPermission();
-        }
-      } catch (e) {}
-    }
+      window.addEventListener('resize', resizeRenderer);
+      window.addEventListener('orientationchange', () => {
+        setTimeout(resizeRenderer, 300);
+      });
 
-    function createARModule() {
-      let video;
-      let texture;
-      let group;
-      let playing = false;
+      scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-      function resizeRenderer() {
-        const { renderer, camera } = XR8.Threejs.xrScene();
+      video = document.createElement('video');
+      video.src = AR_CONFIG.videoSrc;
+      video.loop = true;
+      video.muted = false;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.crossOrigin = 'anonymous';
+      video.preload = 'auto';
 
-        renderer.setPixelRatio(window.devicePixelRatio || 1);
-        renderer.setSize(window.innerWidth, window.innerHeight, false);
+      texture = new THREE.VideoTexture(video);
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
 
-        renderer.domElement.style.cssText = `
-          position: fixed !important;
-          inset: 0 !important;
-          width: 100vw !important;
-          height: 100vh !important;
-          z-index: 0 !important;
-          object-fit: cover !important;
-        `;
+      const w = AR_CONFIG.videoPlaneWidth;
+      const h = w * AR_CONFIG.videoAspect.h / AR_CONFIG.videoAspect.w;
 
-        if (camera) {
-          camera.aspect = window.innerWidth / window.innerHeight;
-          camera.updateProjectionMatrix();
-        }
-      }
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({
+          map: texture,
+          side: THREE.DoubleSide,
+          toneMapped: false
+        })
+      );
 
-      async function setPlayback(shouldPlay) {
-        if (shouldPlay) {
-          await video.play().catch(console.warn);
-          playing = true;
-          UI.playBtn.textContent = '⏸ 暫停';
-        } else {
-          video.pause();
-          playing = false;
-          UI.playBtn.textContent = '▶ 播放';
-        }
-      }
+      group = new THREE.Group();
+      group.visible = false;
+      group.add(mesh);
+      scene.add(group);
 
-      return {
-        name: 'ar-video-module',
-
-        onStart() {
-          const { scene, renderer } = XR8.Threejs.xrScene();
-
-          renderer.autoClear = false;
-
-          resizeRenderer();
-
-          if (!STATE.resizeBound) {
-            STATE.resizeBound = true;
-
-            window.addEventListener('resize', resizeRenderer);
-            window.addEventListener('orientationchange', () => {
-              setTimeout(resizeRenderer, 300);
-            });
-          }
-
-          scene.add(new THREE.AmbientLight(0xffffff, 1));
-
-          video = createVideo();
-          texture = new THREE.VideoTexture(video);
-          texture.minFilter = THREE.LinearFilter;
-          texture.magFilter = THREE.LinearFilter;
-
-          const w = AR_CONFIG.videoPlaneWidth;
-          const h = w * (AR_CONFIG.videoAspect.h / AR_CONFIG.videoAspect.w);
-
-          const mesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(w, h),
-            new THREE.MeshBasicMaterial({
-              map: texture,
-              side: THREE.DoubleSide,
-              toneMapped: false
-            })
-          );
-
-          group = new THREE.Group();
-          group.visible = false;
-          group.add(mesh);
-
-          scene.add(group);
-
-          UI.playBtn.onclick = () => setPlayback(!playing);
-        },
-
-        onUpdate() {
-          if (playing && texture) {
-            texture.needsUpdate = true;
-          }
-        },
-
-        listeners: [
-          {
-            event: 'reality.imagefound',
-            process: async ({ detail }) => {
-              group.position.copy(detail.position);
-              group.quaternion.copy(detail.rotation);
-              group.scale.setScalar(detail.scale);
-
-              group.visible = true;
-              UI.scan.classList.add('hidden');
-              UI.ctrl.classList.add('show');
-
-              await setPlayback(true);
-            }
-          },
-          {
-            event: 'reality.imageupdated',
-            process: ({ detail }) => {
-              if (!group.visible) return;
-
-              group.position.copy(detail.position);
-              group.quaternion.copy(detail.rotation);
-              group.scale.setScalar(detail.scale);
-            }
-          },
-          {
-            event: 'reality.imagelost',
-            process: async () => {
-              group.visible = false;
-              UI.scan.classList.remove('hidden');
-              UI.ctrl.classList.remove('show');
-
-              await setPlayback(false);
-            }
-          }
-        ]
+      btn.onclick = () => {
+        playing ? pause() : play();
       };
-    }
+    },
 
-    async function startXR8() {
-      const targetsReady = await waitUntil(() => STATE.targets);
-      const xrReady = await waitUntil(() => STATE.xrReady);
-
-      if (!targetsReady || !xrReady) {
-        UI.loader.innerHTML = `
-          載入失敗<br>
-          請確認 HTTPS / 相機權限 / 網路
-        `;
-        return;
+    onUpdate() {
+      if (playing && texture) {
+        texture.needsUpdate = true;
       }
+    },
 
-      XR8.XrController.configure({
-        disableWorldTracking: true,
-        imageTargetData: STATE.targets
-      });
+    listeners: [
+      {
+        event: 'reality.imagefound',
+        process({ detail }) {
+          group.position.copy(detail.position);
+          group.quaternion.copy(detail.rotation);
+          group.scale.setScalar(detail.scale);
 
-      XR8.addCameraPipelineModules([
-        XR8.GlTextureRenderer.pipelineModule(),
-        XR8.Threejs.pipelineModule(),
-        XR8.XrController.pipelineModule(),
-        createARModule()
-      ]);
+          group.visible = true;
+          scan.classList.add('hidden');
+          ctrl.classList.add('show');
 
-      XR8.run({
-        canvas: UI.canvas
-      });
-    }
-
-    async function boot() {
-      if (STATE.booted) return;
-      STATE.booted = true;
-
-      UI.loader.classList.add('on');
-
-      await reqPermissions();
-
-      UI.tap.style.opacity = '0';
-
-      setTimeout(() => {
-        UI.tap.style.display = 'none';
-      }, 700);
-
-      await startXR8();
-    }
-
-    window.addEventListener('xrloaded', () => {
-      STATE.xrReady = true;
-    });
-
-    UI.tap.addEventListener('click', boot);
-    UI.tap.addEventListener(
-      'touchend',
-      e => {
-        e.preventDefault();
-        boot();
+          play();
+        }
       },
-      { passive: false }
-    );
+      {
+        event: 'reality.imageupdated',
+        process({ detail }) {
+          if (!group.visible) return;
 
-    window.addEventListener('load', preloadTargets);
-  </script>
+          group.position.copy(detail.position);
+          group.quaternion.copy(detail.rotation);
+          group.scale.setScalar(detail.scale);
+        }
+      },
+      {
+        event: 'reality.imagelost',
+        process() {
+          group.visible = false;
+          scan.classList.remove('hidden');
+          ctrl.classList.remove('show');
+          pause();
+        }
+      }
+    ]
+  };
+}
+
+async function startXR8() {
+  let waited = 0;
+
+  while (!_targets && waited < 10000) {
+    await wait(200);
+    waited += 200;
+  }
+
+  waited = 0;
+
+  while (!_xrReady && waited < 10000) {
+    await wait(200);
+    waited += 200;
+  }
+
+  if (!_targets || !_xrReady) {
+    document.getElementById('ts-loader').textContent = '載入失敗，請重新整理';
+    return;
+  }
+
+  XR8.XrController.configure({
+    disableWorldTracking: true,
+    imageTargetData: _targets
+  });
+
+  XR8.addCameraPipelineModules([
+    XR8.GlTextureRenderer.pipelineModule(),
+    XR8.Threejs.pipelineModule(),
+    XR8.XrController.pipelineModule(),
+    createARModule()
+  ]);
+
+  XR8.run({
+    canvas: document.getElementById('renderCanvas')
+  });
+}
+
+async function boot() {
+  if (_booted) return;
+  _booted = true;
+
+  const loader = document.getElementById('ts-loader');
+  loader.classList.add('on');
+
+  await reqPermissions();
+
+  document.getElementById('tap-start').style.opacity = '0';
+
+  setTimeout(() => {
+    document.getElementById('tap-start').style.display = 'none';
+  }, 700);
+
+  await startXR8();
+}
+
+const tap = document.getElementById('tap-start');
+
+tap.addEventListener('click', boot);
+tap.addEventListener('touchend', e => {
+  e.preventDefault();
+  boot();
+}, { passive:false });
+
+window.addEventListener('load', preloadTargets);
+</script>
+
 </body>
 </html>
