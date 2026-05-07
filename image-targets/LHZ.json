@@ -1,0 +1,23 @@
+{
+  "imagePath": "image-targets/LHZ_luminance.jpg",
+  "metadata": null,
+  "name": "LHZ",
+  "type": "PLANAR",
+  "properties": {
+    "left": 0,
+    "top": 92,
+    "width": 2528,
+    "height": 3371,
+    "isRotated": false,
+    "originalWidth": 2528,
+    "originalHeight": 3555
+  },
+  "resources": {
+    "originalImage": "LHZ_original.jpg",
+    "croppedImage": "LHZ_cropped.jpg",
+    "thumbnailImage": "LHZ_thumbnail.jpg",
+    "luminanceImage": "LHZ_luminance.jpg"
+  },
+  "created": 1778150764758,
+  "updated": 1778150764758
+}
