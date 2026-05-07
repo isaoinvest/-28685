@@ -7,60 +7,55 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <title>AR 影片展示</title>
 
-  <!-- ── 設定區：只需修改這裡 ── -->
+  <!-- ══════════════════════════════════════
+       設定區：只需修改這裡
+  ══════════════════════════════════════ -->
   <script>
   const AR_CONFIG = {
-    targetJsonPaths: [
-      './image-targets/LHZ.json'
-    ],
-    videoSrc: 'https://pub-ac80c6d0a305452bbe0bdfcec65b6a2c.r2.dev/28685.mp4',
-    videoAspect: { w: 16, h: 9 },
+    targetJsonPaths: ['./image-targets/LHZ.json'],
+    videoSrc:        'https://pub-ac80c6d0a305452bbe0bdfcec65b6a2c.r2.dev/28685.mp4',
+    videoAspect:     { w: 16, h: 9 },
     videoPlaneWidth: 1.6
   };
   </script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="./external/xr/xr.js" data-preload-chunks="slam"></script>
+  <!--
+    async 是必要的：讓 xr.js 在背景載入，不阻塞頁面渲染
+    data-preload-chunks="slam" 讓 Image Targets 用到的 SLAM chunk 提早下載
+  -->
+  <script async src="./external/xr/xr.js" data-preload-chunks="slam"></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; }
-    #renderCanvas {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100vw !important; height: 100vh !important; z-index: 0;
-    }
+
+    /* XR8 自己管理 canvas 尺寸，這裡只讓它鋪滿即可，不要用 !important 覆蓋 */
+    #camerafeed { display: block; width: 100vw; height: 100vh; }
+
     [class*="xr8"], [id*="xr8"], [class*="poweredby"], [id*="powered"] {
       visibility: hidden !important; pointer-events: none !important;
     }
 
-    /* ── 掃描引導 ── */
     #scan-ov {
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      z-index: 10; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 20px;
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
       pointer-events: none; opacity: 1; transition: opacity .5s;
     }
     #scan-ov.hidden { opacity: 0; }
-    .sbox {
-      width: 220px; height: 220px; position: relative;
-      border: 1.5px solid rgba(0,210,255,.3); border-radius: 12px;
-    }
+    .sbox { width: 220px; height: 220px; position: relative; border: 1.5px solid rgba(0,210,255,.3); border-radius: 12px; }
     .sline {
       position: absolute; height: 2px; width: 100%; top: 0;
       background: linear-gradient(90deg, transparent, #00eeff 30%, #00eeff 70%, transparent);
       animation: scan 2s ease-in-out infinite;
     }
     .corn { position: absolute; width: 20px; height: 20px; border-color: rgba(0,238,255,.9); border-style: solid; border-width: 0; }
-    .c-tl { top:0;    left:0;  border-top-width:2.5px;    border-left-width:2.5px;   border-top-left-radius:5px; }
-    .c-tr { top:0;    right:0; border-top-width:2.5px;    border-right-width:2.5px;  border-top-right-radius:5px; }
-    .c-bl { bottom:0; left:0;  border-bottom-width:2.5px; border-left-width:2.5px;   border-bottom-left-radius:5px; }
-    .c-br { bottom:0; right:0; border-bottom-width:2.5px; border-right-width:2.5px;  border-bottom-right-radius:5px; }
-    #scan-label {
-      font-family: monospace; font-size: 11px; letter-spacing: 2px;
-      color: rgba(0,210,255,.7); text-align: center; line-height: 1.8;
-    }
+    .c-tl { top:0;    left:0;  border-top-width:2.5px; border-left-width:2.5px;   border-top-left-radius:5px; }
+    .c-tr { top:0;    right:0; border-top-width:2.5px; border-right-width:2.5px;  border-top-right-radius:5px; }
+    .c-bl { bottom:0; left:0;  border-bottom-width:2.5px; border-left-width:2.5px;  border-bottom-left-radius:5px; }
+    .c-br { bottom:0; right:0; border-bottom-width:2.5px; border-right-width:2.5px; border-bottom-right-radius:5px; }
+    #scan-label { font-family: monospace; font-size: 11px; letter-spacing: 2px; color: rgba(0,210,255,.7); text-align: center; line-height: 1.8; }
 
-    /* ── 控制列 ── */
     #ctrl-bar {
       position: fixed; bottom: 0; left: 0; right: 0; height: 60px; z-index: 100;
       display: flex; align-items: center; justify-content: center; gap: 14px;
@@ -76,13 +71,10 @@
     }
     .cb:active { background: rgba(0,80,200,.5); }
 
-    /* ── 錯誤訊息 ── */
-    #err-msg {
-      display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-      background: rgba(0,4,16,.96); border: 1px solid rgba(255,80,80,.5);
-      border-radius: 12px; padding: 20px 28px; text-align: center;
-      font-family: monospace; font-size: 12px; color: rgba(255,120,120,.9);
-      z-index: 9999; max-width: 80vw; line-height: 2;
+    #start-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+      background: rgba(0,4,16,.96); cursor: pointer;
     }
 
     @keyframes scan {
@@ -98,7 +90,7 @@
 </head>
 <body>
 
-  <canvas id="renderCanvas"></canvas>
+  <canvas id="camerafeed"></canvas>
 
   <div id="scan-ov">
     <div class="sbox">
@@ -114,22 +106,18 @@
     <button class="cb" id="btn-mute">🔇 靜音</button>
   </div>
 
-  <div id="err-msg"></div>
+  <div id="start-overlay">
+    <div style="font-size:52px;animation:pulse 2s infinite">📽️</div>
+    <div style="font-family:monospace;font-size:13px;letter-spacing:3px;color:rgba(0,200,255,.85);text-align:center;line-height:2">
+      AR VIDEO<br><span style="font-size:11px;opacity:.55">TAP TO START</span>
+    </div>
+  </div>
 
   <script>
-  // ── 錯誤顯示 ──
-  function showError(msg) {
-    const el = document.getElementById('err-msg');
-    el.innerHTML = msg;
-    el.style.display = 'block';
-    document.getElementById('scan-ov').classList.add('hidden');
-    console.error('[AR]', msg);
-  }
-
-  // =====================================================
+  // ══════════════════════════════════════════════════════════
   //  AR 影片 Pipeline Module
-  // =====================================================
-  function mkVideoModule(targetNames) {
+  // ══════════════════════════════════════════════════════════
+  function makeVideoModule(knownNames) {
     let videoGroup, videoEl, videoTex;
     let playing = false, hasInteracted = false;
 
@@ -138,51 +126,55 @@
     const btnPlay = document.getElementById('btn-play');
     const btnMute = document.getElementById('btn-mute');
 
-    function play() {
+    function isOurs(name) {
+      return knownNames.size === 0 || knownNames.has(name);
+    }
+
+    function doPlay() {
       videoEl.play().then(() => {
         playing = true; hasInteracted = true;
         btnPlay.textContent = '⏸ 暫停';
-      }).catch(e => console.warn('[AR] play() blocked:', e));
+      }).catch(e => console.warn('[AR] play blocked:', e));
     }
 
-    function pause() {
-      videoEl.pause();
-      playing = false;
+    function doPause() {
+      videoEl.pause(); playing = false;
       btnPlay.textContent = '▶ 播放';
     }
 
-    function showVideo(detail) {
-      videoGroup.position.copy(detail.position);
-      videoGroup.quaternion.copy(detail.rotation);
-      videoGroup.scale.setScalar(detail.scale);
+    function showVideo(d) {
+      videoGroup.position.copy(d.position);
+      videoGroup.quaternion.copy(d.rotation);
+      videoGroup.scale.setScalar(d.scale);
       videoGroup.visible = true;
       scanEl.classList.add('hidden');
       ctrlBar.classList.add('show');
-      if (!hasInteracted) play();
+      if (!hasInteracted) doPlay();
     }
 
     function hideVideo() {
       if (videoGroup) videoGroup.visible = false;
-      pause();
+      doPause();
       ctrlBar.classList.remove('show');
       scanEl.classList.remove('hidden');
     }
 
     return {
-      name: 'ar-video',
+      name: 'ar-video-module',
 
       onStart() {
         const { scene, renderer } = XR8.Threejs.xrScene();
+
+        // ✅ 只設 autoClear = false，讓 GlTextureRenderer 的相機畫面不被清除
+        //    絕對不要呼叫 renderer.setSize() 或 renderer.setPixelRatio()
+        //    那會破壞 XR8 對 canvas 的內部控制
         renderer.autoClear = false;
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setSize(window.innerWidth, window.innerHeight, false);
-        scene.add(new THREE.AmbientLight(0xffffff, 1));
 
         // 建立影片元素
         videoEl = document.createElement('video');
-        videoEl.src = AR_CONFIG.videoSrc;
-        videoEl.loop = true;
-        videoEl.muted = true;
+        videoEl.src         = AR_CONFIG.videoSrc;
+        videoEl.loop        = true;
+        videoEl.muted       = true;
         videoEl.playsInline = true;
         videoEl.crossOrigin = 'anonymous';
         videoEl.load();
@@ -202,8 +194,7 @@
         videoGroup.add(mesh);
         scene.add(videoGroup);
 
-        // 控制按鈕
-        btnPlay.addEventListener('click', () => playing ? pause() : play());
+        btnPlay.addEventListener('click', () => playing ? doPause() : doPlay());
         btnMute.addEventListener('click', () => {
           videoEl.muted = !videoEl.muted;
           btnMute.textContent = videoEl.muted ? '🔇 靜音' : '🔊 聲音';
@@ -215,151 +206,122 @@
       },
 
       listeners: [
-        {
-          event: 'reality.imagefound',
-          process({ detail }) {
-            // 接受任何已知目標，或若 targetNames 為空則接受所有
-            if (targetNames.size > 0 && !targetNames.has(detail.name)) return;
-            console.log('[AR] imagefound:', detail.name);
-            showVideo(detail);
-          }
-        },
-        {
-          event: 'reality.imageupdated',
-          process({ detail }) {
-            if (!videoGroup?.visible) return;
-            if (targetNames.size > 0 && !targetNames.has(detail.name)) return;
+        { event: 'reality.imagefound',   process({ detail }) { if (isOurs(detail.name)) showVideo(detail); } },
+        { event: 'reality.imageupdated', process({ detail }) {
+            if (!isOurs(detail.name) || !videoGroup?.visible) return;
             videoGroup.position.copy(detail.position);
             videoGroup.quaternion.copy(detail.rotation);
             videoGroup.scale.setScalar(detail.scale);
-          }
-        },
-        {
-          event: 'reality.imagelost',
-          process({ detail }) {
-            if (targetNames.size > 0 && !targetNames.has(detail.name)) return;
-            console.log('[AR] imagelost:', detail.name);
-            hideVideo();
-          }
-        }
+        }},
+        { event: 'reality.imagelost',    process({ detail }) { if (isOurs(detail.name)) hideVideo(); } }
       ]
     };
   }
 
-  // =====================================================
-  //  核心啟動：正確的 XR8 初始化順序
+  // ══════════════════════════════════════════════════════════
+  //  啟動流程
   //
-  //  ✅ 正確順序：
-  //    1. 預先 fetch JSON（與 xrloaded 同步進行）
-  //    2. xrloaded 觸發後 → configure → addCameraPipelineModules → run
+  //  正確的 8th Wall 啟動時序（官方文件規定）：
   //
-  //  ❌ 錯誤做法（原代碼的問題）：
-  //    - 在 async 函式裡 await 等待，導致 configure() 在
-  //      xrloaded 之後很久才被呼叫，XR8 狀態已改變
-  // =====================================================
-  let _xrReady = false;
-  let _targetJsons = null;   // 完整 JSON 物件陣列（傳給 imageTargetData）
-  let _targetNames = null;   // 目標名稱 Set（傳給 pipeline module 做事件過濾）
+  //    xrloaded 事件觸發
+  //      └─ XR8.XrController.configure()        ← 必須第一步
+  //      └─ XR8.addCameraPipelineModules([
+  //              GlTextureRenderer,              ← 畫相機，必須最先裝
+  //              Threejs,
+  //              XrController,
+  //              自訂模組
+  //         ])
+  //      └─ XR8.run({ canvas })
+  //
+  //  我們用三個旗標確保：使用者點擊 + xrloaded + JSON 載完
+  //  三者都就緒才執行上述流程，且不使用 async polling loop
+  // ══════════════════════════════════════════════════════════
 
-  // Step 1：背景預載 JSON（不阻塞 xrloaded）
+  let _targetJsons = null;
+  let _targetNames = new Set();
+  let _clicked = false;
+  let _xrReady = false;
+
   async function prefetchTargets() {
     const jsons = [];
-    const names = new Set();
-
     for (const path of AR_CONFIG.targetJsonPaths) {
       try {
         const r = await fetch(path);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const json = await r.json();
         jsons.push(json);
-
-        // 嘗試從多種可能的欄位讀取名稱（兼容不同版本的 JSON 格式）
-        const name = json.name ?? json.targetName ?? json.imageName;
-        if (name) names.add(name);
-
-        console.log('[AR] target loaded:', path, '→ name:', name ?? '(unknown)');
-      } catch (e) {
-        console.error('[AR] failed to load target:', path, e);
+        const n = json.name ?? json.targetName ?? json.imageName;
+        if (n) _targetNames.add(n);
+        console.log('[AR] loaded target:', path, 'name:', n ?? '(none)');
+      } catch(e) {
+        console.error('[AR] failed to load target:', e.message);
       }
     }
-
     _targetJsons = jsons;
-    _targetNames = names;
-    console.log('[AR] targets ready. names:', [...names]);
-
-    tryStartXR();
+    maybeStart();
   }
 
-  // Step 2：xrloaded 後觸發
   function onXrLoaded() {
     _xrReady = true;
-    console.log('[AR] xrloaded');
-    tryStartXR();
+    console.log('[AR] xrloaded ✓');
+    maybeStart();
   }
 
-  // Step 3：兩者都就緒才真正啟動（無須 polling loop）
-  function tryStartXR() {
-    if (!_xrReady || _targetJsons === null) return;  // 等另一方
+  async function onUserClick() {
+    document.getElementById('start-overlay').remove();
+    try {
+      if (typeof DeviceMotionEvent?.requestPermission === 'function')
+        await DeviceMotionEvent.requestPermission();
+      if (typeof DeviceOrientationEvent?.requestPermission === 'function')
+        await DeviceOrientationEvent.requestPermission();
+    } catch(e) {}
+    _clicked = true;
+    console.log('[AR] user clicked ✓');
+    maybeStart();
+  }
+
+  function maybeStart() {
+    if (!_clicked || !_xrReady || _targetJsons === null) return;
 
     if (_targetJsons.length === 0) {
-      showError('❌ 無法載入影像目標 JSON<br>請確認 ./image-targets/LHZ.json 路徑正確');
+      document.getElementById('scan-label').innerHTML =
+        '❌ 無法載入影像目標<br>請確認 LHZ.json 路徑';
       return;
     }
 
-    console.log('[AR] starting XR8 with', _targetJsons.length, 'target(s)');
+    console.log('[AR] all ready → starting XR8');
 
-    // ✅ configure 必須在 xrloaded 之後、run 之前同步呼叫
+    // 步驟 1：configure（必須在 addCameraPipelineModules 之前）
     XR8.XrController.configure({
       disableWorldTracking: true,
-      imageTargetData: _targetJsons      // 傳完整 JSON 物件
+      imageTargetData: _targetJsons
     });
 
+    // 步驟 2：安裝 pipeline modules（順序重要！）
     XR8.addCameraPipelineModules([
-      XR8.GlTextureRenderer.pipelineModule(),
-      XR8.Threejs.pipelineModule(),
-      XR8.XrController.pipelineModule(),
-      mkVideoModule(_targetNames)
+      XR8.GlTextureRenderer.pipelineModule(),  // ← 相機畫面，必須第一
+      XR8.Threejs.pipelineModule(),            // ← three.js 場景
+      XR8.XrController.pipelineModule(),       // ← 追蹤 + 圖像辨識
+      makeVideoModule(_targetNames)            // ← 自訂影片邏輯
     ]);
 
-    XR8.run({ canvas: document.getElementById('renderCanvas') });
+    // 步驟 3：啟動相機
+    XR8.run({ canvas: document.getElementById('camerafeed') });
   }
 
-  // ── 啟動 Overlay（單次點擊，觸發相機 / 陀螺儀權限）──
-  ;(function initOverlay() {
-    const overlay = document.createElement('div');
-    Object.assign(overlay.style, {
-      position:'fixed', top:0, left:0, width:'100%', height:'100%',
-      zIndex:9999, display:'flex', flexDirection:'column',
-      alignItems:'center', justifyContent:'center', gap:'18px',
-      background:'rgba(0,4,16,.96)', cursor:'pointer'
-    });
-    overlay.innerHTML = `
-      <div style="font-size:52px;animation:pulse 2s infinite">📽️</div>
-      <div style="font-family:monospace;font-size:13px;letter-spacing:3px;
-                  color:rgba(0,200,255,.85);text-align:center;line-height:2">
-        AR VIDEO<br>
-        <span style="font-size:11px;opacity:.55">TAP TO START</span>
-      </div>`;
+  // 初始化
+  document.getElementById('start-overlay')
+    .addEventListener('click', onUserClick, { once: true });
 
-    overlay.addEventListener('click', async () => {
-      overlay.remove();
-      try {
-        if (DeviceMotionEvent?.requestPermission)
-          await DeviceMotionEvent.requestPermission();
-        if (DeviceOrientationEvent?.requestPermission)
-          await DeviceOrientationEvent.requestPermission();
-      } catch(e) {}
+  // xrloaded 可能在我們綁定之前就已觸發（若 xr.js 快速載入）
+  if (typeof XR8 !== 'undefined') {
+    onXrLoaded();
+  } else {
+    window.addEventListener('xrloaded', onXrLoaded);
+  }
 
-      // 同時啟動兩個並行流程
-      window.addEventListener('xrloaded', onXrLoaded);
-      // 若 XR8 已在 script 載入時就觸發過 xrloaded，直接呼叫
-      if (typeof XR8 !== 'undefined') onXrLoaded();
-
-      prefetchTargets();
-    }, { once: true });
-
-    document.body.appendChild(overlay);
-  })();
+  // 預先下載 JSON（不等使用者點擊）
+  prefetchTargets();
   </script>
 </body>
 </html>
