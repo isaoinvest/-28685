@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <title>AR 影片展示</title>
+  <title>AR Video</title>
 
   <script>
     const AR_CONFIG = {
@@ -20,214 +20,112 @@
   <script src="./external/xr/xr.js" data-preload-chunks="slam"></script>
 
   <style>
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
+    * { margin:0; padding:0; box-sizing:border-box; }
     html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #000;
-      touch-action: none;
+      width:100%;
+      height:100%;
+      overflow:hidden;
+      background:#000;
+      touch-action:none;
     }
 
-    #renderCanvas {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      z-index: 0;
+    #renderCanvas{
+      position:fixed;
+      inset:0;
+      width:100vw;
+      height:100vh;
+      z-index:0;
     }
 
-    [class*="xr8"], [id*="xr8"], [class*="poweredby"], [id*="powered"],
-    [class*="watermark"], [id*="watermark"] {
-      display: none !important;
-      visibility: hidden !important;
-      pointer-events: none !important;
+    #tap-start{
+      position:fixed;
+      inset:0;
+      z-index:9999;
+      background:#000;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap:20px;
+      transition:opacity .7s ease;
     }
 
-    #tap-start {
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      background: #000;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      gap: 18px;
-      cursor: pointer;
-      transition: opacity .8s ease;
-      -webkit-tap-highlight-color: transparent;
+    #tap-start .title{
+      font-family:monospace;
+      color:#00d8ff;
+      letter-spacing:3px;
+      font-size:13px;
+      text-align:center;
+      line-height:2;
     }
 
-    #tap-start .icon {
-      font-size: 54px;
-      animation: float 3s ease-in-out infinite;
+    #ts-loader{
+      display:none;
+      color:#00d8ff;
+      font-size:11px;
+      font-family:monospace;
     }
 
-    #tap-start .title {
-      font-family: monospace;
-      font-size: 13px;
-      letter-spacing: 3px;
-      color: rgba(0,200,255,.85);
-      text-align: center;
-      line-height: 2;
+    #ts-loader.on{ display:block; }
+
+    #scan-ov{
+      position:fixed;
+      inset:0;
+      z-index:10;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      flex-direction:column;
+      gap:20px;
+      pointer-events:none;
     }
 
-    #tap-start .sub {
-      font-size: 11px;
-      opacity: .55;
+    #scan-ov.hidden{ opacity:0; }
+
+    .sbox{
+      width:220px;
+      height:220px;
+      border:2px solid rgba(0,220,255,.4);
+      border-radius:12px;
     }
 
-    #ts-loader {
-      font-family: monospace;
-      font-size: 10px;
-      letter-spacing: 2px;
-      color: rgba(0,190,255,.52);
-      display: none;
-      animation: pulse 1.2s infinite;
+    #scan-label{
+      color:#00d8ff;
+      font-family:monospace;
+      font-size:11px;
+      text-align:center;
+      line-height:1.8;
     }
 
-    #ts-loader.on {
-      display: block;
+    #ctrl-bar{
+      position:fixed;
+      bottom:0;
+      left:0;
+      right:0;
+      height:60px;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      background:rgba(0,0,0,.85);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .4s;
+      z-index:100;
     }
 
-    #scan-ov {
-      position: fixed;
-      inset: 0;
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      pointer-events: none;
-      opacity: 1;
-      transition: opacity .5s;
+    #ctrl-bar.show{
+      opacity:1;
+      pointer-events:auto;
     }
 
-    #scan-ov.hidden {
-      opacity: 0;
-    }
-
-    .sbox {
-      width: 220px;
-      height: 220px;
-      position: relative;
-      border: 1.5px solid rgba(0,210,255,.3);
-      border-radius: 12px;
-    }
-
-    .sline {
-      position: absolute;
-      height: 2px;
-      width: 100%;
-      top: 0;
-      background: linear-gradient(
-        90deg,
-        transparent,
-        #00eeff 30%,
-        #00eeff 70%,
-        transparent
-      );
-      animation: scan 2s ease-in-out infinite;
-    }
-
-    .corn {
-      position: absolute;
-      width: 20px;
-      height: 20px;
-      border-color: rgba(0,238,255,.9);
-      border-style: solid;
-      border-width: 0;
-    }
-
-    .c-tl {
-      top: 0; left: 0;
-      border-top-width: 2.5px;
-      border-left-width: 2.5px;
-    }
-
-    .c-tr {
-      top: 0; right: 0;
-      border-top-width: 2.5px;
-      border-right-width: 2.5px;
-    }
-
-    .c-bl {
-      bottom: 0; left: 0;
-      border-bottom-width: 2.5px;
-      border-left-width: 2.5px;
-    }
-
-    .c-br {
-      bottom: 0; right: 0;
-      border-bottom-width: 2.5px;
-      border-right-width: 2.5px;
-    }
-
-    #scan-label {
-      font-family: monospace;
-      font-size: 11px;
-      letter-spacing: 2px;
-      color: rgba(0,210,255,.7);
-      text-align: center;
-      line-height: 1.8;
-    }
-
-    #ctrl-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 60px;
-      z-index: 100;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: rgba(0,4,14,.92);
-      border-top: 1px solid rgba(0,150,255,.2);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity .4s;
-    }
-
-    #ctrl-bar.show {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    .cb {
-      height: 38px;
-      padding: 0 20px;
-      background: rgba(0,20,60,.8);
-      border: 1px solid rgba(0,150,255,.35);
-      border-radius: 20px;
-      font-family: monospace;
-      font-size: 12px;
-      color: rgba(0,200,255,.9);
-      cursor: pointer;
-    }
-
-    @keyframes scan {
-      0% { top: 0; }
-      50% { top: calc(100% - 2px); }
-      100% { top: 0; }
-    }
-
-    @keyframes float {
-      0%,100% { transform: translateY(0); }
-      50% { transform: translateY(-6px); }
-    }
-
-    @keyframes pulse {
-      0%,100% { opacity: .9; }
-      50% { opacity: .2; }
+    .cb{
+      height:38px;
+      padding:0 20px;
+      border-radius:20px;
+      border:1px solid rgba(0,180,255,.3);
+      background:#00172d;
+      color:#00d8ff;
+      font-family:monospace;
     }
   </style>
 </head>
@@ -236,13 +134,7 @@
 <canvas id="renderCanvas"></canvas>
 
 <div id="scan-ov">
-  <div class="sbox">
-    <div class="sline"></div>
-    <div class="corn c-tl"></div>
-    <div class="corn c-tr"></div>
-    <div class="corn c-bl"></div>
-    <div class="corn c-br"></div>
-  </div>
+  <div class="sbox"></div>
   <div id="scan-label">AR READY<br>請對準目標圖像</div>
 </div>
 
@@ -251,155 +143,38 @@
 </div>
 
 <div id="tap-start">
-  <div class="icon">📽️</div>
-  <div class="title">AR VIDEO<br><span class="sub">TAP TO START</span></div>
-  <div id="ts-loader"></div>
+  <div class="title">
+    AR VIDEO<br>
+    TAP TO START
+  </div>
+  <div id="ts-loader">啟動中...</div>
 </div>
 
 <script>
-function mkARModule(targetJsons) {
-  const names = new Set(
-    targetJsons.map(j => j.name ?? j.targetName ?? j.imageName).filter(Boolean)
-  );
-  const isOurs = n => names.size === 0 || names.has(n);
-
-  let vGrp, vEl, vTex;
-  let playing = false;
-
-  const scanEl = document.getElementById('scan-ov');
-  const ctrlBar = document.getElementById('ctrl-bar');
-  const btnPlay = document.getElementById('btn-play');
-
-  function mkVid() {
-    const v = document.createElement('video');
-    v.src = AR_CONFIG.videoSrc;
-    v.loop = true;
-    v.muted = false;
-    v.playsInline = true;
-    v.setAttribute('playsinline', '');
-    v.setAttribute('webkit-playsinline', '');
-    v.crossOrigin = 'anonymous';
-    v.preload = 'auto';
-    v.load();
-    return v;
-  }
-
-  function playV(v) {
-    v.play().then(() => {
-      playing = true;
-      btnPlay.textContent = '⏸ 暫停';
-    }).catch(err => console.warn(err));
-  }
-
-  function pauseV(v) {
-    v.pause();
-    playing = false;
-    btnPlay.textContent = '▶ 播放';
-  }
-
-  function applyPose(d) {
-    vGrp.position.copy(d.position);
-    vGrp.quaternion.copy(d.rotation);
-    vGrp.scale.setScalar(d.scale);
-  }
-
-  return {
-    name: 'ar-video-module',
-
-    onStart() {
-      const { scene, renderer } = XR8.Threejs.xrScene();
-
-      renderer.autoClear = false;
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.setSize(window.innerWidth, window.innerHeight, false);
-
-      scene.add(new THREE.AmbientLight(0xffffff, 1));
-
-      vEl = mkVid();
-      vTex = new THREE.VideoTexture(vEl);
-      vTex.minFilter = THREE.LinearFilter;
-      vTex.magFilter = THREE.LinearFilter;
-
-      const pw = AR_CONFIG.videoPlaneWidth;
-      const ph = pw * (AR_CONFIG.videoAspect.h / AR_CONFIG.videoAspect.w);
-
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(pw, ph),
-        new THREE.MeshBasicMaterial({
-          map: vTex,
-          side: THREE.DoubleSide,
-          toneMapped: false
-        })
-      );
-
-      vGrp = new THREE.Group();
-      vGrp.visible = false;
-      vGrp.add(mesh);
-      scene.add(vGrp);
-
-      btnPlay.addEventListener('click', () => {
-        playing ? pauseV(vEl) : playV(vEl);
-      });
-    },
-
-    onUpdate() {
-      if (vTex && playing) vTex.needsUpdate = true;
-    },
-
-    listeners: [
-      {
-        event: 'reality.imagefound',
-        process({ detail }) {
-          if (!isOurs(detail.name)) return;
-
-          applyPose(detail);
-          vGrp.visible = true;
-          scanEl.classList.add('hidden');
-          ctrlBar.classList.add('show');
-          playV(vEl);
-        }
-      },
-      {
-        event: 'reality.imageupdated',
-        process({ detail }) {
-          if (!isOurs(detail.name)) return;
-          applyPose(detail);
-        }
-      },
-      {
-        event: 'reality.imagelost',
-        process({ detail }) {
-          if (!isOurs(detail.name)) return;
-
-          vGrp.visible = false;
-          scanEl.classList.remove('hidden');
-          ctrlBar.classList.remove('show');
-          pauseV(vEl);
-        }
-      }
-    ]
-  };
-}
-
 let _targets = null;
 let _xrReady = false;
 let _booted = false;
 
 window.addEventListener('xrloaded', () => {
+  console.log('xrloaded');
   _xrReady = true;
 });
 
 async function preloadTargets() {
-  const res = [];
+  const arr = [];
+
   for (const path of AR_CONFIG.targetJsonPaths) {
     try {
-      const r = await fetch(path);
-      res.push(await r.json());
-    } catch(e) {
+      const res = await fetch(path);
+      const json = await res.json();
+      arr.push(json);
+      console.log('target loaded', path);
+    } catch(e){
       console.error(e);
     }
   }
-  _targets = res;
+
+  _targets = arr;
 }
 
 async function reqPermissions() {
@@ -417,10 +192,33 @@ async function reqPermissions() {
     ) {
       await DeviceOrientationEvent.requestPermission();
     }
-  } catch(e) {}
+  } catch(e){}
+}
+
+function wait(ms){
+  return new Promise(r=>setTimeout(r,ms));
 }
 
 async function startXR8() {
+  let waited = 0;
+
+  while (!_targets && waited < 10000) {
+    await wait(200);
+    waited += 200;
+  }
+
+  waited = 0;
+
+  while (!_xrReady && waited < 10000) {
+    await wait(200);
+    waited += 200;
+  }
+
+  if (!_targets || !_xrReady) {
+    document.getElementById('ts-loader').textContent = '載入失敗，請重新整理';
+    return;
+  }
+
   XR8.XrController.configure({
     disableWorldTracking: true,
     imageTargetData: _targets
@@ -430,7 +228,7 @@ async function startXR8() {
     XR8.GlTextureRenderer.pipelineModule(),
     XR8.Threejs.pipelineModule(),
     XR8.XrController.pipelineModule(),
-    mkARModule(_targets)
+    createARModule()
   ]);
 
   XR8.run({
@@ -438,42 +236,127 @@ async function startXR8() {
   });
 }
 
+function createARModule() {
+  let video, texture, group;
+  let playing = false;
+
+  const scan = document.getElementById('scan-ov');
+  const ctrl = document.getElementById('ctrl-bar');
+  const btn = document.getElementById('btn-play');
+
+  function play() {
+    video.play().then(()=>{
+      playing = true;
+      btn.textContent = '⏸ 暫停';
+    }).catch(console.warn);
+  }
+
+  function pause() {
+    video.pause();
+    playing = false;
+    btn.textContent = '▶ 播放';
+  }
+
+  return {
+    name:'ar-video',
+
+    onStart() {
+      const { scene } = XR8.Threejs.xrScene();
+
+      video = document.createElement('video');
+      video.src = AR_CONFIG.videoSrc;
+      video.loop = true;
+      video.muted = false;
+      video.playsInline = true;
+      video.setAttribute('playsinline','');
+      video.setAttribute('webkit-playsinline','');
+      video.crossOrigin = 'anonymous';
+
+      texture = new THREE.VideoTexture(video);
+
+      const w = AR_CONFIG.videoPlaneWidth;
+      const h = w * AR_CONFIG.videoAspect.h / AR_CONFIG.videoAspect.w;
+
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(w,h),
+        new THREE.MeshBasicMaterial({
+          map:texture,
+          side:THREE.DoubleSide
+        })
+      );
+
+      group = new THREE.Group();
+      group.visible = false;
+      group.add(mesh);
+
+      scene.add(group);
+
+      btn.onclick = ()=> playing ? pause() : play();
+    },
+
+    onUpdate() {
+      if (playing) texture.needsUpdate = true;
+    },
+
+    listeners:[
+      {
+        event:'reality.imagefound',
+        process({detail}) {
+          group.position.copy(detail.position);
+          group.quaternion.copy(detail.rotation);
+          group.scale.setScalar(detail.scale);
+
+          group.visible = true;
+          scan.classList.add('hidden');
+          ctrl.classList.add('show');
+
+          play();
+        }
+      },
+      {
+        event:'reality.imageupdated',
+        process({detail}) {
+          group.position.copy(detail.position);
+          group.quaternion.copy(detail.rotation);
+          group.scale.setScalar(detail.scale);
+        }
+      },
+      {
+        event:'reality.imagelost',
+        process() {
+          group.visible = false;
+          scan.classList.remove('hidden');
+          ctrl.classList.remove('show');
+          pause();
+        }
+      }
+    ]
+  };
+}
+
 async function boot() {
   if (_booted) return;
   _booted = true;
 
   const loader = document.getElementById('ts-loader');
-  loader.textContent = '⬛ 啟動中…';
   loader.classList.add('on');
 
   await reqPermissions();
 
-  const unlockVideo = document.createElement('video');
-  unlockVideo.playsInline = true;
-  unlockVideo.muted = false;
-
-  try {
-    await unlockVideo.play().catch(() => {});
-    unlockVideo.pause();
-  } catch(e) {}
-
-  document.getElementById('tap-start').style.opacity = '0';
-  setTimeout(() => {
-    document.getElementById('tap-start').style.display = 'none';
-  }, 800);
+  document.getElementById('tap-start').style.opacity = 0;
+  setTimeout(()=>{
+    document.getElementById('tap-start').style.display='none';
+  },700);
 
   await startXR8();
 }
 
-document.getElementById('tap-start').addEventListener('click', boot);
-document.getElementById('tap-start').addEventListener(
-  'touchend',
-  e => {
-    e.preventDefault();
-    boot();
-  },
-  { passive: false }
-);
+const tap = document.getElementById('tap-start');
+tap.addEventListener('click', boot);
+tap.addEventListener('touchend', e=>{
+  e.preventDefault();
+  boot();
+},{passive:false});
 
 window.addEventListener('load', preloadTargets);
 </script>
