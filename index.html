@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <title>AR Video</title>
@@ -20,24 +20,46 @@
   <script src="./external/xr/xr.js" data-preload-chunks="slam"></script>
 
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
+    * {
+      margin:0;
+      padding:0;
+      box-sizing:border-box;
+    }
+
     html, body {
       width:100%;
       height:100%;
       overflow:hidden;
       background:#000;
       touch-action:none;
-    }
-
-    #renderCanvas{
       position:fixed;
-      inset:0;
-      width:100vw;
-      height:100vh;
-      z-index:0;
     }
 
-    #tap-start{
+    body {
+      inset:0;
+    }
+
+    #renderCanvas {
+      position:fixed !important;
+      top:0 !important;
+      left:0 !important;
+      width:100vw !important;
+      height:100vh !important;
+      z-index:0;
+      object-fit:cover;
+    }
+
+    [class*="xr8"],
+    [id*="xr8"],
+    [class*="watermark"],
+    [id*="watermark"],
+    [class*="poweredby"] {
+      display:none !important;
+      visibility:hidden !important;
+      pointer-events:none !important;
+    }
+
+    #tap-start {
       position:fixed;
       inset:0;
       z-index:9999;
@@ -48,48 +70,54 @@
       align-items:center;
       gap:20px;
       transition:opacity .7s ease;
+      -webkit-tap-highlight-color:transparent;
     }
 
-    #tap-start .title{
-      font-family:monospace;
+    #tap-start .title {
       color:#00d8ff;
-      letter-spacing:3px;
+      font-family:monospace;
       font-size:13px;
-      text-align:center;
+      letter-spacing:3px;
       line-height:2;
+      text-align:center;
     }
 
-    #ts-loader{
+    #ts-loader {
       display:none;
       color:#00d8ff;
-      font-size:11px;
       font-family:monospace;
+      font-size:11px;
     }
 
-    #ts-loader.on{ display:block; }
+    #ts-loader.on {
+      display:block;
+    }
 
-    #scan-ov{
+    #scan-ov {
       position:fixed;
       inset:0;
       z-index:10;
       display:flex;
+      flex-direction:column;
       justify-content:center;
       align-items:center;
-      flex-direction:column;
       gap:20px;
       pointer-events:none;
+      transition:opacity .4s;
     }
 
-    #scan-ov.hidden{ opacity:0; }
+    #scan-ov.hidden {
+      opacity:0;
+    }
 
-    .sbox{
+    .sbox {
       width:220px;
       height:220px;
-      border:2px solid rgba(0,220,255,.4);
+      border:2px solid rgba(0,220,255,.45);
       border-radius:12px;
     }
 
-    #scan-label{
+    #scan-label {
       color:#00d8ff;
       font-family:monospace;
       font-size:11px;
@@ -97,12 +125,13 @@
       line-height:1.8;
     }
 
-    #ctrl-bar{
+    #ctrl-bar {
       position:fixed;
-      bottom:0;
       left:0;
       right:0;
+      bottom:0;
       height:60px;
+      z-index:100;
       display:flex;
       justify-content:center;
       align-items:center;
@@ -110,22 +139,23 @@
       opacity:0;
       pointer-events:none;
       transition:opacity .4s;
-      z-index:100;
     }
 
-    #ctrl-bar.show{
+    #ctrl-bar.show {
       opacity:1;
       pointer-events:auto;
     }
 
-    .cb{
+    .cb {
       height:38px;
       padding:0 20px;
+      border:none;
       border-radius:20px;
-      border:1px solid rgba(0,180,255,.3);
       background:#00172d;
+      border:1px solid rgba(0,180,255,.35);
       color:#00d8ff;
       font-family:monospace;
+      font-size:12px;
     }
   </style>
 </head>
@@ -156,9 +186,13 @@ let _xrReady = false;
 let _booted = false;
 
 window.addEventListener('xrloaded', () => {
-  console.log('xrloaded');
   _xrReady = true;
+  console.log('xrloaded');
 });
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 async function preloadTargets() {
   const arr = [];
@@ -168,8 +202,8 @@ async function preloadTargets() {
       const res = await fetch(path);
       const json = await res.json();
       arr.push(json);
-      console.log('target loaded', path);
-    } catch(e){
+      console.log('target loaded:', path);
+    } catch (e) {
       console.error(e);
     }
   }
@@ -195,8 +229,144 @@ async function reqPermissions() {
   } catch(e){}
 }
 
-function wait(ms){
-  return new Promise(r=>setTimeout(r,ms));
+function createARModule() {
+  let video, texture, group;
+  let playing = false;
+
+  const scan = document.getElementById('scan-ov');
+  const ctrl = document.getElementById('ctrl-bar');
+  const btn = document.getElementById('btn-play');
+
+  function play() {
+    video.play().then(() => {
+      playing = true;
+      btn.textContent = '⏸ 暫停';
+    }).catch(console.warn);
+  }
+
+  function pause() {
+    video.pause();
+    playing = false;
+    btn.textContent = '▶ 播放';
+  }
+
+  function resizeRenderer() {
+    const { renderer, camera } = XR8.Threejs.xrScene();
+
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+
+    renderer.domElement.style.cssText = `
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 0 !important;
+      object-fit: cover !important;
+    `;
+
+    if (camera) {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+    }
+  }
+
+  return {
+    name: 'ar-video-module',
+
+    onStart() {
+      const { scene, renderer } = XR8.Threejs.xrScene();
+
+      renderer.autoClear = false;
+
+      resizeRenderer();
+
+      window.addEventListener('resize', resizeRenderer);
+      window.addEventListener('orientationchange', () => {
+        setTimeout(resizeRenderer, 300);
+      });
+
+      scene.add(new THREE.AmbientLight(0xffffff, 1));
+
+      video = document.createElement('video');
+      video.src = AR_CONFIG.videoSrc;
+      video.loop = true;
+      video.muted = false;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.crossOrigin = 'anonymous';
+      video.preload = 'auto';
+
+      texture = new THREE.VideoTexture(video);
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+
+      const w = AR_CONFIG.videoPlaneWidth;
+      const h = w * AR_CONFIG.videoAspect.h / AR_CONFIG.videoAspect.w;
+
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({
+          map: texture,
+          side: THREE.DoubleSide,
+          toneMapped: false
+        })
+      );
+
+      group = new THREE.Group();
+      group.visible = false;
+      group.add(mesh);
+      scene.add(group);
+
+      btn.onclick = () => {
+        playing ? pause() : play();
+      };
+    },
+
+    onUpdate() {
+      if (playing && texture) {
+        texture.needsUpdate = true;
+      }
+    },
+
+    listeners: [
+      {
+        event: 'reality.imagefound',
+        process({ detail }) {
+          group.position.copy(detail.position);
+          group.quaternion.copy(detail.rotation);
+          group.scale.setScalar(detail.scale);
+
+          group.visible = true;
+          scan.classList.add('hidden');
+          ctrl.classList.add('show');
+
+          play();
+        }
+      },
+      {
+        event: 'reality.imageupdated',
+        process({ detail }) {
+          if (!group.visible) return;
+
+          group.position.copy(detail.position);
+          group.quaternion.copy(detail.rotation);
+          group.scale.setScalar(detail.scale);
+        }
+      },
+      {
+        event: 'reality.imagelost',
+        process() {
+          group.visible = false;
+          scan.classList.remove('hidden');
+          ctrl.classList.remove('show');
+          pause();
+        }
+      }
+    ]
+  };
 }
 
 async function startXR8() {
@@ -236,104 +406,6 @@ async function startXR8() {
   });
 }
 
-function createARModule() {
-  let video, texture, group;
-  let playing = false;
-
-  const scan = document.getElementById('scan-ov');
-  const ctrl = document.getElementById('ctrl-bar');
-  const btn = document.getElementById('btn-play');
-
-  function play() {
-    video.play().then(()=>{
-      playing = true;
-      btn.textContent = '⏸ 暫停';
-    }).catch(console.warn);
-  }
-
-  function pause() {
-    video.pause();
-    playing = false;
-    btn.textContent = '▶ 播放';
-  }
-
-  return {
-    name:'ar-video',
-
-    onStart() {
-      const { scene } = XR8.Threejs.xrScene();
-
-      video = document.createElement('video');
-      video.src = AR_CONFIG.videoSrc;
-      video.loop = true;
-      video.muted = false;
-      video.playsInline = true;
-      video.setAttribute('playsinline','');
-      video.setAttribute('webkit-playsinline','');
-      video.crossOrigin = 'anonymous';
-
-      texture = new THREE.VideoTexture(video);
-
-      const w = AR_CONFIG.videoPlaneWidth;
-      const h = w * AR_CONFIG.videoAspect.h / AR_CONFIG.videoAspect.w;
-
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(w,h),
-        new THREE.MeshBasicMaterial({
-          map:texture,
-          side:THREE.DoubleSide
-        })
-      );
-
-      group = new THREE.Group();
-      group.visible = false;
-      group.add(mesh);
-
-      scene.add(group);
-
-      btn.onclick = ()=> playing ? pause() : play();
-    },
-
-    onUpdate() {
-      if (playing) texture.needsUpdate = true;
-    },
-
-    listeners:[
-      {
-        event:'reality.imagefound',
-        process({detail}) {
-          group.position.copy(detail.position);
-          group.quaternion.copy(detail.rotation);
-          group.scale.setScalar(detail.scale);
-
-          group.visible = true;
-          scan.classList.add('hidden');
-          ctrl.classList.add('show');
-
-          play();
-        }
-      },
-      {
-        event:'reality.imageupdated',
-        process({detail}) {
-          group.position.copy(detail.position);
-          group.quaternion.copy(detail.rotation);
-          group.scale.setScalar(detail.scale);
-        }
-      },
-      {
-        event:'reality.imagelost',
-        process() {
-          group.visible = false;
-          scan.classList.remove('hidden');
-          ctrl.classList.remove('show');
-          pause();
-        }
-      }
-    ]
-  };
-}
-
 async function boot() {
   if (_booted) return;
   _booted = true;
@@ -343,20 +415,22 @@ async function boot() {
 
   await reqPermissions();
 
-  document.getElementById('tap-start').style.opacity = 0;
-  setTimeout(()=>{
-    document.getElementById('tap-start').style.display='none';
-  },700);
+  document.getElementById('tap-start').style.opacity = '0';
+
+  setTimeout(() => {
+    document.getElementById('tap-start').style.display = 'none';
+  }, 700);
 
   await startXR8();
 }
 
 const tap = document.getElementById('tap-start');
+
 tap.addEventListener('click', boot);
-tap.addEventListener('touchend', e=>{
+tap.addEventListener('touchend', e => {
   e.preventDefault();
   boot();
-},{passive:false});
+}, { passive:false });
 
 window.addEventListener('load', preloadTargets);
 </script>
