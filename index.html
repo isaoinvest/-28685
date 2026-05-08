@@ -151,7 +151,7 @@
   // ── 工具函式 ──
   const wait = ms => new Promise(r => setTimeout(r, ms));
 
-  // [改進 #2] polling 縮短至 50ms，減少等待 JSON/xrReady 的空窗期
+  // polling 縮短至 50ms，減少等待 JSON/xrReady 的空窗期
   const waitUntil = (fn, timeout = 10000) => new Promise(resolve => {
     const iv = setInterval(() => { if (fn()) { clearInterval(iv); resolve(true); } }, 50);
     setTimeout(() => { clearInterval(iv); resolve(fn()); }, timeout);
@@ -188,12 +188,17 @@
   function createARModule() {
     let video, texture, group;
 
-    // [改進 #3] 並發鎖：防止 imagefound/imagelost 快速連發造成 playing 狀態錯亂
+    // 並發保護：playLock 防止同時執行；pendingPlay 記錄鎖住期間最新的意圖，
+    // 解鎖後補執行，確保 imagelost 的 pause 不會被 imagefound 的 play 鎖擋掉。
     let playing = false;
     let playLock = false;
+    let pendingPlay = null;   // null | true | false
 
     async function setPlayback(shouldPlay) {
-      if (playLock) return;
+      if (playLock) {
+        pendingPlay = shouldPlay;   // 記錄最新意圖，不丟棄
+        return;
+      }
       playLock = true;
       try {
         if (shouldPlay) {
@@ -212,6 +217,12 @@
         console.warn('[AR] setPlayback failed:', e);
       } finally {
         playLock = false;
+        // 若鎖住期間有新的狀態請求，補執行一次
+        if (pendingPlay !== null) {
+          const next = pendingPlay;
+          pendingPlay = null;
+          await setPlayback(next);
+        }
       }
     }
 
@@ -287,19 +298,17 @@
 
         UI.playBtn.onclick = () => setPlayback(!playing);
 
-        // [改進 #6] 處理頁面切到背景再回來：iOS 有機率讓影片靜默失效
+        // visibilitychange：App 切換後返回自動恢復播放，避免 iOS 靜默失效
         document.addEventListener('visibilitychange', () => {
           if (document.hidden) {
-            // 切出去：強制暫停，釋放解碼資源
             if (playing) video.pause();
           } else {
-            // 回來：若先前在播放中，重新觸發
             if (playing) video.play().catch(() => {});
           }
         });
       },
 
-      // [改進 #7] onUpdate 只在實際播放時才標記 needsUpdate，避免浪費 GPU 上傳
+      // 只在實際播放且有新幀時才標記 needsUpdate，避免浪費 GPU 上傳
       onUpdate() {
         if (playing && texture && video.readyState >= 2) {
           texture.needsUpdate = true;
