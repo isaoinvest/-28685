@@ -158,22 +158,28 @@
   });
 
   // ══════════════════════════════════════════════════════════
-  //  [改進 #1] 盡早建立 Video 元素，頁面 load 後立即開始緩衝
-  //  不需等使用者點擊，讓瀏覽器在背景下載影片資料
+  //  HTTP Cache 暖身：頁面 load 後立即建立 muted video，
+  //  觸發瀏覽器開始下載並快取影片資料。
+  //  ※ 此元素「僅用於暖快取」，不會被 AR 模組重用。
+  //    原因：iOS 不允許在非手勢 context 對已建立的 muted video
+  //          動態解除靜音並播放，會導致黑屏。
+  //    解法：onStart()（手勢後）建立全新的 unmuted video，
+  //          直接從 HTTP cache 取資料，達到零網路等待。
   // ══════════════════════════════════════════════════════════
-  let earlyVideo = null;
-
-  function createEarlyVideo() {
+  function warmHttpCache() {
     const v = document.createElement('video');
     v.src         = AR_CONFIG.videoSrc;
-    v.loop        = true;
-    v.muted       = true;          // 預緩衝階段必須 muted，否則 iOS 不允許 auto-load
+    v.muted       = true;
     v.playsInline = true;
     v.crossOrigin = 'anonymous';
     v.preload     = 'auto';
     v.setAttribute('webkit-playsinline', '');
-    v.load();                      // 立即觸發網路請求，開始緩衝
-    return v;
+    v.load();
+    // 在 canplaythrough 後立即 abort，釋放 DOM 參考，
+    // 但已下載的資料留在瀏覽器 cache 供後續 video 元素使用
+    v.addEventListener('canplaythrough', () => {
+      v.src = '';   // 釋放元素，cache 資料仍保留
+    }, { once: true });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -187,15 +193,13 @@
     let playLock = false;
 
     async function setPlayback(shouldPlay) {
-      if (playLock) return;          // 有操作進行中，直接忽略重複呼叫
+      if (playLock) return;
       playLock = true;
       try {
         if (shouldPlay) {
           if (video.readyState < 2) {
             await new Promise(r => video.addEventListener('loadeddata', r, { once: true }));
           }
-          // [改進 #1] 解除 muted 限制（使用者手勢已完成）
-          video.muted = false;
           await video.play();
           playing = true;
           UI.playBtn.textContent = '⏸ 暫停';
@@ -207,7 +211,7 @@
       } catch(e) {
         console.warn('[AR] setPlayback failed:', e);
       } finally {
-        playLock = false;            // 無論成敗，釋放鎖
+        playLock = false;
       }
     }
 
@@ -238,29 +242,26 @@
 
         scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-        // [改進 #1] 重用頁面 load 時預先建立的 video 元素，避免重新下載
-        if (earlyVideo) {
-          video = earlyVideo;
-          earlyVideo = null;
-          // warm-up 已在背景完成，不需重做
-        } else {
-          // fallback：earlyVideo 不知何故未建立
-          video = document.createElement('video');
-          video.src         = AR_CONFIG.videoSrc;
-          video.loop        = true;
-          video.muted       = true;
-          video.playsInline = true;
-          video.crossOrigin = 'anonymous';
-          video.preload     = 'auto';
-          video.setAttribute('webkit-playsinline', '');
-          video.load();
-        }
+        // 建立全新的 video 元素（muted:false）
+        // ─ 此時已在使用者手勢 callstack 之後，iOS 允許 unmuted autoplay
+        // ─ warmHttpCache() 已預先把影片寫入瀏覽器 HTTP cache，
+        //   同 URL 的新元素會從 cache 讀取，幾乎無網路延遲
+        video = document.createElement('video');
+        video.src         = AR_CONFIG.videoSrc;
+        video.loop        = true;
+        video.muted       = false;   // 直接 unmuted，不需動態切換
+        video.playsInline = true;
+        video.crossOrigin = 'anonymous';
+        video.preload     = 'auto';
+        video.setAttribute('webkit-playsinline', '');
+        video.load();
 
-        // [改進 #4] warm-up：play 再 pause，讓解碼器提前初始化
-        // 使用旗標防止與正式播放競速
+        // Warm-up decoder：在 canplaythrough 後短暫 play 再 pause，
+        // 讓 GPU 解碼器提前初始化，避免 imagefound 時首幀黑屏
+        // ─ warmedUp 旗標防止與 imagefound 競速
         let warmedUp = false;
         video.addEventListener('canplaythrough', async () => {
-          if (warmedUp || playing) return;   // 若已 warm 過或已在正式播放，跳過
+          if (warmedUp || playing) return;
           warmedUp = true;
           try {
             await video.play();
@@ -269,10 +270,10 @@
           } catch(e) {}
         }, { once: true });
 
-        // [改進 #5] 使用 RGBFormat 取代 RGBAFormat，影片無 alpha 通道
+        // Three.js VideoTexture（RGBAFormat 是 r128 VideoTexture 的正確格式）
         texture = new THREE.VideoTexture(video);
         texture.minFilter = texture.magFilter = THREE.LinearFilter;
-        texture.format = THREE.RGBFormat;   // 省去無意義的 alpha 通道轉換
+        texture.format = THREE.RGBAFormat;
 
         const pw = AR_CONFIG.videoPlaneWidth;
         const ph = pw * (AR_CONFIG.videoAspect.h / AR_CONFIG.videoAspect.w);
@@ -411,10 +412,10 @@
     UI.scan.querySelector('#scan-label').textContent = '❌ AR 錯誤，請重新整理';
   });
 
-  // [改進 #1] 頁面 load 後同時執行：預載 JSON + 建立 video 元素（開始緩衝）
+  // 頁面 load 後同時執行：預載 JSON + HTTP cache 暖身
   window.addEventListener('load', () => {
     preloadTargets();
-    earlyVideo = createEarlyVideo();
+    warmHttpCache();
   });
   </script>
 </body>
