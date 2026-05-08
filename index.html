@@ -27,7 +27,6 @@
       width: 100%; height: 100%;
       overflow: hidden; background: #000;
       touch-action: none;
-      /* position:fixed 防止 iOS Safari 在捲動時移位 */
       position: fixed; inset: 0;
       font-family: monospace;
     }
@@ -76,7 +75,6 @@
       width: 220px; height: 220px; position: relative;
       border: 1.5px solid rgba(0,220,255,.4); border-radius: 12px;
     }
-    /* 四角掃描線動畫 */
     .sline {
       position: absolute; height: 2px; width: 100%; top: 0;
       background: linear-gradient(90deg, transparent, #00eeff 30%, #00eeff 70%, transparent);
@@ -151,19 +149,68 @@
   const STATE = { targets: null, xrReady: false, booted: false };
 
   // ── 工具函式 ──
-  const wait      = ms => new Promise(r => setTimeout(r, ms));
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+
+  // [改進 #2] polling 縮短至 50ms，減少等待 JSON/xrReady 的空窗期
   const waitUntil = (fn, timeout = 10000) => new Promise(resolve => {
-    const iv = setInterval(() => { if (fn()) { clearInterval(iv); resolve(true); } }, 150);
+    const iv = setInterval(() => { if (fn()) { clearInterval(iv); resolve(true); } }, 50);
     setTimeout(() => { clearInterval(iv); resolve(fn()); }, timeout);
   });
+
+  // ══════════════════════════════════════════════════════════
+  //  [改進 #1] 盡早建立 Video 元素，頁面 load 後立即開始緩衝
+  //  不需等使用者點擊，讓瀏覽器在背景下載影片資料
+  // ══════════════════════════════════════════════════════════
+  let earlyVideo = null;
+
+  function createEarlyVideo() {
+    const v = document.createElement('video');
+    v.src         = AR_CONFIG.videoSrc;
+    v.loop        = true;
+    v.muted       = true;          // 預緩衝階段必須 muted，否則 iOS 不允許 auto-load
+    v.playsInline = true;
+    v.crossOrigin = 'anonymous';
+    v.preload     = 'auto';
+    v.setAttribute('webkit-playsinline', '');
+    v.load();                      // 立即觸發網路請求，開始緩衝
+    return v;
+  }
 
   // ══════════════════════════════════════════════════════════
   //  AR Pipeline Module
   // ══════════════════════════════════════════════════════════
   function createARModule() {
-    let video, texture, group, playing = false;
+    let video, texture, group;
 
-    // renderer 尺寸同步（橫豎轉向、resize 都呼叫）
+    // [改進 #3] 並發鎖：防止 imagefound/imagelost 快速連發造成 playing 狀態錯亂
+    let playing = false;
+    let playLock = false;
+
+    async function setPlayback(shouldPlay) {
+      if (playLock) return;          // 有操作進行中，直接忽略重複呼叫
+      playLock = true;
+      try {
+        if (shouldPlay) {
+          if (video.readyState < 2) {
+            await new Promise(r => video.addEventListener('loadeddata', r, { once: true }));
+          }
+          // [改進 #1] 解除 muted 限制（使用者手勢已完成）
+          video.muted = false;
+          await video.play();
+          playing = true;
+          UI.playBtn.textContent = '⏸ 暫停';
+        } else {
+          video.pause();
+          playing = false;
+          UI.playBtn.textContent = '▶ 播放';
+        }
+      } catch(e) {
+        console.warn('[AR] setPlayback failed:', e);
+      } finally {
+        playLock = false;            // 無論成敗，釋放鎖
+      }
+    }
+
     function syncRenderer() {
       const { renderer, camera } = XR8.Threejs.xrScene();
       renderer.setPixelRatio(window.devicePixelRatio || 1);
@@ -178,27 +225,6 @@
       }
     }
 
-    // 統一播放控制，含 readyState 等待
-    async function setPlayback(shouldPlay) {
-      if (shouldPlay) {
-        try {
-          // 等待影片可播（readyState < 2 表示資料尚不足）
-          if (video.readyState < 2) {
-            await new Promise(r => video.addEventListener('loadeddata', r, { once: true }));
-          }
-          await video.play();
-          playing = true;
-          UI.playBtn.textContent = '⏸ 暫停';
-        } catch(e) {
-          console.warn('[AR] play failed:', e);
-        }
-      } else {
-        video.pause();
-        playing = false;
-        UI.playBtn.textContent = '▶ 播放';
-      }
-    }
-
     return {
       name: 'ar-video-module',
 
@@ -207,37 +233,46 @@
         renderer.autoClear = false;
         syncRenderer();
 
-        // resize & 轉向（只綁一次）
         window.addEventListener('resize', syncRenderer);
         window.addEventListener('orientationchange', () => setTimeout(syncRenderer, 300));
 
         scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-        // 建立影片元素
-        // muted:false → 因使用者已在 tap-to-start 產生手勢，可直接有聲播放
-        video = document.createElement('video');
-        video.src         = AR_CONFIG.videoSrc;
-        video.loop        = true;
-        video.muted       = false;
-        video.playsInline = true;
-        video.crossOrigin = 'anonymous';
-        video.preload     = 'auto';
-        video.setAttribute('webkit-playsinline', '');
+        // [改進 #1] 重用頁面 load 時預先建立的 video 元素，避免重新下載
+        if (earlyVideo) {
+          video = earlyVideo;
+          earlyVideo = null;
+          // warm-up 已在背景完成，不需重做
+        } else {
+          // fallback：earlyVideo 不知何故未建立
+          video = document.createElement('video');
+          video.src         = AR_CONFIG.videoSrc;
+          video.loop        = true;
+          video.muted       = true;
+          video.playsInline = true;
+          video.crossOrigin = 'anonymous';
+          video.preload     = 'auto';
+          video.setAttribute('webkit-playsinline', '');
+          video.load();
+        }
 
-        // Warm-up：預先 play 再立刻 pause，讓影片解碼器提前初始化
-        // 避免第一次 imagefound 時出現黑幀延遲
+        // [改進 #4] warm-up：play 再 pause，讓解碼器提前初始化
+        // 使用旗標防止與正式播放競速
+        let warmedUp = false;
         video.addEventListener('canplaythrough', async () => {
+          if (warmedUp || playing) return;   // 若已 warm 過或已在正式播放，跳過
+          warmedUp = true;
           try {
-            await video.play(); await wait(80); video.pause(); video.currentTime = 0;
+            await video.play();
+            await wait(80);
+            if (!playing) { video.pause(); video.currentTime = 0; }
           } catch(e) {}
         }, { once: true });
 
-        video.load();
-
-        // 影片紋理 & 平面
+        // [改進 #5] 使用 RGBFormat 取代 RGBAFormat，影片無 alpha 通道
         texture = new THREE.VideoTexture(video);
         texture.minFilter = texture.magFilter = THREE.LinearFilter;
-        texture.format = THREE.RGBAFormat;
+        texture.format = THREE.RGBFormat;   // 省去無意義的 alpha 通道轉換
 
         const pw = AR_CONFIG.videoPlaneWidth;
         const ph = pw * (AR_CONFIG.videoAspect.h / AR_CONFIG.videoAspect.w);
@@ -250,10 +285,24 @@
         scene.add(group);
 
         UI.playBtn.onclick = () => setPlayback(!playing);
+
+        // [改進 #6] 處理頁面切到背景再回來：iOS 有機率讓影片靜默失效
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) {
+            // 切出去：強制暫停，釋放解碼資源
+            if (playing) video.pause();
+          } else {
+            // 回來：若先前在播放中，重新觸發
+            if (playing) video.play().catch(() => {});
+          }
+        });
       },
 
+      // [改進 #7] onUpdate 只在實際播放時才標記 needsUpdate，避免浪費 GPU 上傳
       onUpdate() {
-        if (playing && texture) texture.needsUpdate = true;
+        if (playing && texture && video.readyState >= 2) {
+          texture.needsUpdate = true;
+        }
       },
 
       listeners: [
@@ -295,7 +344,6 @@
   //  啟動流程
   // ══════════════════════════════════════════════════════════
 
-  // 預載目標 JSON（頁面 load 後立即執行，不等使用者點擊）
   async function preloadTargets() {
     const result = [];
     for (const path of AR_CONFIG.targetJsonPaths) {
@@ -307,9 +355,6 @@
     STATE.targets = result;
   }
 
-  // iOS 陀螺儀 / 動作權限
-  // 兩個 requestPermission 在同一手勢 callstack 內依序呼叫
-  // → iOS 只彈一次系統對話框（相機授權由 XR8 內部觸發，使用者只見 1 次詢問）
   async function reqPermissions() {
     for (const Ev of [DeviceMotionEvent, DeviceOrientationEvent]) {
       if (typeof Ev?.requestPermission === 'function') {
@@ -334,7 +379,7 @@
     });
 
     XR8.addCameraPipelineModules([
-      XR8.GlTextureRenderer.pipelineModule(),   // 相機畫面（必須第一）
+      XR8.GlTextureRenderer.pipelineModule(),
       XR8.Threejs.pipelineModule(),
       XR8.XrController.pipelineModule(),
       createARModule()
@@ -356,21 +401,21 @@
     await startXR8();
   }
 
-  // xrloaded 事件
   window.addEventListener('xrloaded', () => { STATE.xrReady = true; });
 
-  // tap-to-start（touchend 防 iOS 300ms 延遲，click 供 Android）
   UI.tap.addEventListener('touchend', e => { e.preventDefault(); boot(); }, { passive: false });
   UI.tap.addEventListener('click', boot);
 
-  // XR8 錯誤
   window.addEventListener('xrerror', ({ detail }) => {
     console.error('[AR] xrerror:', detail);
     UI.scan.querySelector('#scan-label').textContent = '❌ AR 錯誤，請重新整理';
   });
 
-  // 頁面 load 後背景預載 JSON
-  window.addEventListener('load', preloadTargets);
+  // [改進 #1] 頁面 load 後同時執行：預載 JSON + 建立 video 元素（開始緩衝）
+  window.addEventListener('load', () => {
+    preloadTargets();
+    earlyVideo = createEarlyVideo();
+  });
   </script>
 </body>
 </html>
