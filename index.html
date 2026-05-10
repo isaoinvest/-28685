@@ -206,6 +206,10 @@
             await new Promise(r => video.addEventListener('loadeddata', r, { once: true }));
           }
           await video.play();
+          // 等至少一幀被解碼：給瀏覽器一個 rAF 週期（~16ms）
+          // 讓 GPU decoder 有機會輸出第一個真實畫面，
+          // 確保 group.visible = true 後 texture 立即有內容可顯示。
+          await new Promise(r => requestAnimationFrame(r));
           playing = true;
           UI.playBtn.textContent = '⏸ 暫停';
         } else {
@@ -270,6 +274,9 @@
         // Warm-up decoder：在 canplaythrough 後短暫 play 再 pause，
         // 讓 GPU 解碼器提前初始化，避免 imagefound 時首幀黑屏
         // ─ warmedUp 旗標防止與 imagefound 競速
+        // ─ 不重設 currentTime：seek 會讓 readyState 短暫降至 <2，
+        //   若此時 imagefound 已到，texture 無法更新 → 卡幀。
+        //   loop=true 的影片從任意位置繼續播放均可。
         let warmedUp = false;
         video.addEventListener('canplaythrough', async () => {
           if (warmedUp || playing) return;
@@ -277,7 +284,7 @@
           try {
             await video.play();
             await wait(80);
-            if (!playing) { video.pause(); video.currentTime = 0; }
+            if (!playing) { video.pause(); }   // ← 移除 currentTime = 0
           } catch(e) {}
         }, { once: true });
 
@@ -308,9 +315,12 @@
         });
       },
 
-      // 只在實際播放且有新幀時才標記 needsUpdate，避免浪費 GPU 上傳
+      // 只在 group 可見且有可用幀時才標記 needsUpdate，
+      // 條件從 playing 放寬為 group.visible：
+      // 即使 seek 期間 playing 旗標已設但影片暫時 readyState < 2，
+      // 一旦恢復 >= 2 就能立刻更新，不會卡在舊幀。
       onUpdate() {
-        if (playing && texture && video.readyState >= 2) {
+        if (group && group.visible && texture && video.readyState >= 2) {
           texture.needsUpdate = true;
         }
       },
@@ -322,10 +332,12 @@
             group.position.copy(detail.position);
             group.quaternion.copy(detail.rotation);
             group.scale.setScalar(detail.scale);
-            group.visible = true;
+            // ↓ 先不顯示 group，等影片真正開始播放後再顯示，
+            //   避免 Mesh 已可見但 texture 還是第一幀的空窗期。
             UI.scan.classList.add('hidden');
             UI.ctrl.classList.add('show');
             await setPlayback(true);
+            group.visible = true;   // ← 移至 setPlayback 完成後
           }
         },
         {
